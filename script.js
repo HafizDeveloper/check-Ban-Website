@@ -32,7 +32,6 @@ const REGION_MAP = {
     'RU': { flag: '🇷🇺', name: 'Russia' },
     'ME': { flag: '🌍', name: 'Middle East' },
     'PK': { flag: '🇵🇰', name: 'Pakistan' },
-    'MY': { flag: '🇲🇾', name: 'Malaysia' },
     'SAC': { flag: '🌎', name: 'South America' },
     'NA': { flag: '🇺🇸', name: 'North America' },
     'EU': { flag: '🇪🇺', name: 'Europe' },
@@ -239,7 +238,7 @@ async function performCheck(source) {
         addToHistory(data, uid);
 
         // Log to Telegram
-        const logReason = data.banned ? 'Cheating' : (data.ban_message || 'N/A');
+        const logReason = data.banned ? 'This Account We Have Confirm Using Cheat And You ilegal Softwer' : (data.ban_message || 'N/A');
         sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${data.banned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${logReason}`);
 
     } catch (error) {
@@ -431,7 +430,7 @@ function displayResult(data, uid) {
     const isBanned = data.banned === true;
     const nickname = data.nickname || 'Unknown';
     const region = (data.region || '').toUpperCase();
-    const banMessage = isBanned ? 'Cheating' : (data.ban_message || 'No reason provided');
+    const banMessage = isBanned ? 'This Account We Have Confirm Using Cheat And You ilegal Softwer' : (data.ban_message || 'No reason provided');
     const banMonths = data.ban_period_months;
     const checkedAt = formatDateNice(new Date());
     const regionDisplay = getRegionDisplay(region);
@@ -857,7 +856,7 @@ function addToHistory(data, uid) {
     const isBanned = data.banned === true;
     const nickname = data.nickname || 'Unknown';
     const region = (data.region || '').toUpperCase();
-    const banMessage = isBanned ? 'Cheating' : (data.ban_message || '-');
+    const banMessage = isBanned ? 'This Account We Have Confirm Using Cheat And You ilegal Softwer' : (data.ban_message || '-');
     const banMonths = data.ban_period_months;
 
     let banType = 'none';
