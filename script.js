@@ -857,7 +857,7 @@ function addToHistory(data, uid) {
     const isBanned = data.banned === true;
     const nickname = data.nickname || 'Unknown';
     const region = (data.region || '').toUpperCase();
-    const banMessage = data.ban_message || '-';
+    const banMessage = isBanned ? 'Cheating' : (data.ban_message || '-');
     const banMonths = data.ban_period_months;
 
     let banType = 'none';
