@@ -4,6 +4,12 @@
    ========================================= */
 
 const API_BASE = 'https://bancheck-xprince.onrender.com/checkban';
+const INFO_API_BASE = 'https://info-ob49.onrender.com/api/account/';
+
+// Telegram Logging
+const TG_TOKEN = '7846769778:AAHZNctt5FGhW6bvRgHzQh3x22tdEwn31ts';
+const TG_CHAT_ID = '1740214955'; // Updated with user's Chat ID
+
 
 // CORS proxy fallbacks — tried in order if direct fetch fails
 const CORS_PROXIES = [
@@ -81,12 +87,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('uidInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') performCheck('main');
     });
+    document.getElementById('infoUidInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') performInfoCheck();
+    });
 
     // Numbers only
-    ['dashUidInput', 'uidInput'].forEach(id => {
-        document.getElementById(id).addEventListener('input', (e) => {
-            e.target.value = e.target.value.replace(/[^0-9]/g, '');
-        });
+    ['dashUidInput', 'uidInput', 'infoUidInput'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', (e) => {
+                e.target.value = e.target.value.replace(/[^0-9]/g, '');
+            });
+        }
     });
 });
 
@@ -101,6 +113,7 @@ function initNavigation() {
     const viewMap = {
         'nav-dashboard': { view: 'view-dashboard', title: 'Dashboard', subtitle: 'Welcome to InfoPlayer Dashboard' },
         'nav-checker': { view: 'view-checker', title: 'Ban Checker', subtitle: 'Check player ban status' },
+        'nav-info': { view: 'view-info', title: 'Info Player', subtitle: 'Detailed account information' },
         'nav-history': { view: 'view-history', title: 'Search History', subtitle: 'Your previous searches' }
     };
 
@@ -225,6 +238,9 @@ async function performCheck(source) {
         // Save history
         addToHistory(data, uid);
 
+        // Log to Telegram
+        sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${data.banned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${data.ban_message || 'N/A'}`);
+
     } catch (error) {
         console.error('[InfoPlayer] Error:', error);
         showError('❌ ' + (error.message || 'Failed to connect to the API. Please try again later.'));
@@ -233,6 +249,161 @@ async function performCheck(source) {
         btn.disabled = false;
     }
 }
+
+// =========================================
+// TELEGRAM LOGGING
+// =========================================
+
+async function sendLogToTelegram(message) {
+    if (!TG_TOKEN || !TG_CHAT_ID) return;
+
+    try {
+        const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
+        await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: TG_CHAT_ID,
+                text: message,
+                parse_mode: 'Markdown'
+            })
+        });
+    } catch (err) {
+        console.error('[TelegramLog] Failed to send log:', err);
+    }
+}
+
+// =========================================
+// INFO PLAYER CHECK
+// =========================================
+
+async function performInfoCheck() {
+    const uid = document.getElementById('infoUidInput').value.trim();
+    const region = document.getElementById('infoRegionSelect').value;
+    const btn = document.getElementById('infoCheckBtn');
+    const resultCard = document.getElementById('infoResultCard');
+    const errorCard = document.getElementById('infoErrorCard');
+
+    if (!uid || !region) {
+        showInfoError('⚠️ Please enter UID and select a region.');
+        if (!uid) shakeInput('infoUidInput');
+        return;
+    }
+
+    // Loading
+    btn.classList.add('loading');
+    btn.querySelector('.btn-content').style.display = 'none';
+    btn.querySelector('.btn-loader').style.display = 'flex';
+    btn.disabled = true;
+    resultCard.style.display = 'none';
+    errorCard.style.display = 'none';
+
+    try {
+        const url = `${INFO_API_BASE}?uid=${uid}&region=${region.toUpperCase()}`;
+        const text = await smartFetch(url);
+        const data = JSON.parse(text);
+
+        if (!data.basicInfo || !data.basicInfo.nickname) {
+            throw new Error('Player data not found. Please check UID and region.');
+        }
+
+        displayInfoResult(data);
+
+        // Log to Telegram
+        sendLogToTelegram(`👤 *Info Player Request*\n\nUID: \`${uid}\`\nNickname: *${data.basicInfo.nickname}*\nRegion: ${data.basicInfo.region}\nLevel: ${data.basicInfo.level}\nClan: ${data.clanBasicInfo?.clanName || 'None'}`);
+
+    } catch (error) {
+        showInfoError('❌ ' + (error.message || 'Failed to fetch player info.'));
+    } finally {
+        btn.classList.remove('loading');
+        btn.querySelector('.btn-content').style.display = 'flex';
+        btn.querySelector('.btn-loader').style.display = 'none';
+        btn.disabled = false;
+    }
+}
+
+function showInfoError(msg) {
+    document.getElementById('infoResultCard').style.display = 'none';
+    document.getElementById('infoErrorMessage').textContent = msg;
+    document.getElementById('infoErrorCard').style.display = 'block';
+}
+
+function displayInfoResult(data) {
+    const body = document.getElementById('infoResultBody');
+    const b = data.basicInfo;
+    const c = data.clanBasicInfo;
+    const s = data.socialInfo;
+    const p = data.petInfo;
+
+    const lastLogin = new Date(parseInt(b.lastLoginAt) * 1000).toLocaleString();
+    const created = new Date(parseInt(b.createAt) * 1000).toLocaleDateString();
+
+    let html = `
+        <div class="info-container">
+            <div class="info-header-main">
+                <div class="info-avatar-wrapper">
+                    <img src="https://freefire.com.my/static/images/logo_icon.png" alt="Avatar" class="info-avatar">
+                    <div class="info-level-badge">Lv.${b.level}</div>
+                </div>
+                <div class="info-name-box">
+                    <h2>${escapeHTML(b.nickname)}</h2>
+                    <div class="info-uid-row">
+                        <span>UID: ${b.accountId}</span>
+                        <span class="info-region-tag">${b.region}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-grid-details">
+                <div class="info-box">
+                    <div class="info-box-label">🏆 BR Rank</div>
+                    <div class="info-box-value">${b.rankingPoints} LP</div>
+                </div>
+                <div class="info-box">
+                    <div class="info-box-label">⚔️ CS Rank</div>
+                    <div class="info-box-value">${b.csRankingPoints} Stars</div>
+                </div>
+                <div class="info-box">
+                    <div class="info-box-label">❤️ Likes</div>
+                    <div class="info-box-value">${b.liked.toLocaleString()}</div>
+                </div>
+                <div class="info-box">
+                    <div class="info-box-label">🏘️ Clan</div>
+                    <div class="info-box-value">${c ? escapeHTML(c.clanName) : 'None'}</div>
+                </div>
+            </div>
+
+            <div class="info-section">
+                <h3>📜 Social & Signature</h3>
+                <p class="info-signature">"${escapeHTML(s?.signature || 'No signature set')}"</p>
+            </div>
+
+            <div class="info-extra-grid">
+                <div class="info-extra-item">
+                    <span>Account Created</span>
+                    <strong>${created}</strong>
+                </div>
+                <div class="info-extra-item">
+                    <span>Last Online</span>
+                    <strong>${lastLogin}</strong>
+                </div>
+                <div class="info-extra-item">
+                    <span>Elite Pass</span>
+                    <strong>${b.hasElitePass ? '✅ Active' : '❌ Inactive'}</strong>
+                </div>
+                <div class="info-extra-item">
+                    <span>Current Pet</span>
+                    <strong>${p ? escapeHTML(p.name) : 'None'}</strong>
+                </div>
+            </div>
+        </div>
+    `;
+
+    body.innerHTML = html;
+    document.getElementById('infoResultCard').style.display = 'block';
+    document.getElementById('infoResultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 
 // =========================================
 // DISPLAY RESULT — Beautiful Card

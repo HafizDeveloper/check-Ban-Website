@@ -54,6 +54,13 @@
                 </svg>
                 <span>Ban Checker</span>
             </a>
+            <a href="#" class="nav-item" id="nav-info">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                </svg>
+                <span>Info Player</span>
+            </a>
             <a href="#" class="nav-item" id="nav-history">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10" />
@@ -243,6 +250,94 @@
                         <line x1="12" y1="16" x2="12.01" y2="16" />
                     </svg>
                     <p id="errorMessage"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Info Player View -->
+        <section class="view" id="view-info">
+            <div class="checker-container" style="max-width:800px;">
+                <div class="checker-hero">
+                    <div class="checker-hero-content">
+                        <div class="hero-badge" style="background:linear-gradient(135deg,#06b6d4,#8b5cf6);">INFO PLAYER
+                        </div>
+                        <h2>Player Info Lookup</h2>
+                        <p>Enter the player's UID and region to view full account details — level, rank, clan, pet, and
+                            more.</p>
+                    </div>
+                </div>
+
+                <div class="checker-form-card">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="infoUidInput">Player UID</label>
+                            <div class="input-wrapper large">
+                                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <rect x="2" y="5" width="20" height="14" rx="2" />
+                                    <line x1="2" y1="10" x2="22" y2="10" />
+                                </svg>
+                                <input type="text" id="infoUidInput" placeholder="e.g. 12345678" autocomplete="off">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="infoRegionSelect">Server Region</label>
+                            <div class="input-wrapper large">
+                                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="2" y1="12" x2="22" y2="12" />
+                                    <path
+                                        d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                                </svg>
+                                <select id="infoRegionSelect">
+                                    <option value="" disabled selected>Select Region</option>
+                                    <option value="sg">🇸🇬 Singapore (SG)</option>
+                                    <option value="id">🇮🇩 Indonesia (ID)</option>
+                                    <option value="br">🇧🇷 Brazil (BR)</option>
+                                    <option value="us">🇺🇸 United States (US)</option>
+                                    <option value="ind">🇮🇳 India (IND)</option>
+                                    <option value="bd">🇧🇩 Bangladesh (BD)</option>
+                                    <option value="th">🇹🇭 Thailand (TH)</option>
+                                    <option value="vn">🇻🇳 Vietnam (VN)</option>
+                                    <option value="tw">🇹🇼 Taiwan (TW)</option>
+                                    <option value="ru">🇷🇺 Russia (RU)</option>
+                                    <option value="me">🌍 Middle East (ME)</option>
+                                    <option value="pk">🇵🇰 Pakistan (PK)</option>
+                                    <option value="my">🇲🇾 Malaysia (MY)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn-check full" id="infoCheckBtn" onclick="performInfoCheck()"
+                        style="background:linear-gradient(135deg,#06b6d4,#8b5cf6);">
+                        <div class="btn-content">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8" />
+                                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                            </svg>
+                            <span>Search Player Info</span>
+                        </div>
+                        <div class="btn-loader" style="display:none;">
+                            <div class="spinner"></div>
+                            <span>Searching...</span>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- Info Result -->
+                <div class="result-card" id="infoResultCard" style="display:none;">
+                    <div class="result-body" id="infoResultBody"></div>
+                </div>
+
+                <!-- Info Error -->
+                <div class="error-card" id="infoErrorCard" style="display:none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="40" height="40">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    <p id="infoErrorMessage"></p>
                 </div>
             </div>
         </section>
