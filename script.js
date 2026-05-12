@@ -239,7 +239,8 @@ async function performCheck(source) {
         addToHistory(data, uid);
 
         // Log to Telegram
-        sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${data.banned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${data.ban_message || 'N/A'}`);
+        const logReason = data.banned ? 'Cheating' : (data.ban_message || 'N/A');
+        sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${data.banned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${logReason}`);
 
     } catch (error) {
         console.error('[InfoPlayer] Error:', error);
@@ -430,7 +431,7 @@ function displayResult(data, uid) {
     const isBanned = data.banned === true;
     const nickname = data.nickname || 'Unknown';
     const region = (data.region || '').toUpperCase();
-    const banMessage = data.ban_message || 'No reason provided';
+    const banMessage = isBanned ? 'Cheating' : (data.ban_message || 'No reason provided');
     const banMonths = data.ban_period_months;
     const checkedAt = formatDateNice(new Date());
     const regionDisplay = getRegionDisplay(region);
