@@ -284,6 +284,17 @@ body {
     gap: 8px;
     font-size: 0.8rem;
     color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.developer-credit {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.developer-credit strong {
+    color: var(--accent-blue);
+    font-weight: 700;
 }
 
 .status-dot {
