@@ -334,75 +334,88 @@ function displayInfoResult(data) {
     const c = data.clanBasicInfo;
     const s = data.socialInfo;
     const p = data.petInfo;
+    const prof = data.profileInfo;
+    const leader = data.captainBasicInfo;
+    const credit = data.creditScoreInfo;
 
-    const lastLogin = new Date(parseInt(b.lastLoginAt) * 1000).toLocaleString();
-    const created = new Date(parseInt(b.createAt) * 1000).toLocaleDateString();
+    const formatTimestamp = (ts) => {
+        if (!ts || ts === "0") return "Never";
+        const date = new Date(parseInt(ts) * 1000);
+        return date.getFullYear() + "-" +
+            String(date.getMonth() + 1).padStart(2, '0') + "-" +
+            String(date.getDate()).padStart(2, '0') + " " +
+            String(date.getHours()).padStart(2, '0') + ":" +
+            String(date.getMinutes()).padStart(2, '0') + ":" +
+            String(date.getSeconds()).padStart(2, '0');
+    };
 
-    let html = `
-        <div class="info-container">
-            <div class="info-header-main">
-                <div class="info-avatar-wrapper">
-                    <img src="https://freefire.com.my/static/images/logo_icon.png" alt="Avatar" class="info-avatar">
-                    <div class="info-level-badge">Lv.${b.level}</div>
-                </div>
-                <div class="info-name-box">
-                    <h2>${escapeHTML(b.nickname)}</h2>
-                    <div class="info-uid-row">
-                        <span>UID: ${b.accountId}</span>
-                        <span class="info-region-tag">${b.region}</span>
-                    </div>
-                </div>
+    const regionDisplay = getRegionDisplay(b.region);
+
+    let textRes = `Player Information
+┌ ACCOUNT BASIC INFO
+├─ Name: ${escapeHTML(b.nickname)}
+├─ UID: ${b.accountId}
+├─ Level: ${b.level} (Exp: ${b.exp})
+├─ Region: ${regionDisplay}
+├─ Likes: ${b.liked.toLocaleString()}
+├─ Honor Score: ${credit ? credit.creditScore : '100'}
+└─ Signature: ${escapeHTML(s?.signature || 'No signature set')}
+
+┌ ACCOUNT ACTIVITY
+├─ Most Recent OB: ${b.releaseVersion || 'Unknown'}
+├─ Current BP Badges: ${b.badgeCnt || 0}
+├─ BR Rank: ${b.rankingPoints || 0}
+├─ CS Rank: ${b.csRankingPoints || 0}
+├─ Created At: ${formatTimestamp(b.createAt)}
+└─ Last Login: ${formatTimestamp(b.lastLoginAt)}
+
+┌ ACCOUNT OVERVIEW
+├─ Avatar ID: ${b.headPic || prof?.avatarId || 'N/A'}
+├─ Banner ID: ${b.bannerId || 'N/A'}
+├─ Pin ID: ${b.pinId || 'N/A'}
+└─ Equipped Skills: [${prof?.equipedSkills ? prof.equipedSkills.join(', ') : 'None'}]
+
+┌ PET DETAILS
+├─ Equipped?: ${p ? 'Yes' : 'No'}
+├─ Pet Name: ${p ? escapeHTML(p.name) : 'Not Found'}
+├─ Pet Exp: ${p ? p.exp : '0'}
+└─ Pet Level: ${p ? p.level : '0'}
+`;
+
+    if (c) {
+        textRes += `
+┌ GUILD INFO
+├─ Guild Name: ${escapeHTML(c.clanName)}
+├─ Guild ID: ${c.clanId}
+├─ Guild Level: ${c.clanLevel}
+├─ Live Members: ${c.memberNum}/${c.capacity}
+└─ Leader Info:
+    ├─ Leader Name: ${escapeHTML(leader?.nickname || 'Unknown')}
+    ├─ Leader UID: ${leader?.accountId || 'N/A'}
+    ├─ Leader Level: ${leader?.level || 'N/A'} (Exp: ${leader?.exp || 'N/A'})
+    ├─ Last Login: ${formatTimestamp(leader?.lastLoginAt)}
+    ├─ Title: ${leader?.title || 'None'}
+    ├─ BP Badges: ${leader?.badgeCnt || 0}
+    ├─ BR Rank: ${leader?.rankingPoints || 0}
+    └─ CS Rank: ${leader?.csRankingPoints || 0}`;
+    }
+
+    body.innerHTML = `
+        <div class="terminal-info-card">
+            <div class="terminal-header">
+                <div class="terminal-dot red"></div>
+                <div class="terminal-dot yellow"></div>
+                <div class="terminal-dot green"></div>
+                <span class="terminal-title">PLAYER_DATA_v1.0</span>
             </div>
-
-            <div class="info-grid-details">
-                <div class="info-box">
-                    <div class="info-box-label">🏆 BR Rank</div>
-                    <div class="info-box-value">${b.rankingPoints} LP</div>
-                </div>
-                <div class="info-box">
-                    <div class="info-box-label">⚔️ CS Rank</div>
-                    <div class="info-box-value">${b.csRankingPoints} Stars</div>
-                </div>
-                <div class="info-box">
-                    <div class="info-box-label">❤️ Likes</div>
-                    <div class="info-box-value">${b.liked.toLocaleString()}</div>
-                </div>
-                <div class="info-box">
-                    <div class="info-box-label">🏘️ Clan</div>
-                    <div class="info-box-value">${c ? escapeHTML(c.clanName) : 'None'}</div>
-                </div>
-            </div>
-
-            <div class="info-section">
-                <h3>📜 Social & Signature</h3>
-                <p class="info-signature">"${escapeHTML(s?.signature || 'No signature set')}"</p>
-            </div>
-
-            <div class="info-extra-grid">
-                <div class="info-extra-item">
-                    <span>Account Created</span>
-                    <strong>${created}</strong>
-                </div>
-                <div class="info-extra-item">
-                    <span>Last Online</span>
-                    <strong>${lastLogin}</strong>
-                </div>
-                <div class="info-extra-item">
-                    <span>Elite Pass</span>
-                    <strong>${b.hasElitePass ? '✅ Active' : '❌ Inactive'}</strong>
-                </div>
-                <div class="info-extra-item">
-                    <span>Current Pet</span>
-                    <strong>${p ? escapeHTML(p.name) : 'None'}</strong>
-                </div>
-            </div>
+            <pre class="terminal-content">${textRes}</pre>
         </div>
     `;
 
-    body.innerHTML = html;
     document.getElementById('infoResultCard').style.display = 'block';
     document.getElementById('infoResultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+
 
 
 // =========================================
