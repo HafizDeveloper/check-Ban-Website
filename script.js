@@ -430,7 +430,7 @@ function displayResult(data, uid) {
     const isBanned = data.banned === true;
     const nickname = data.nickname || 'Unknown';
     const region = (data.region || '').toUpperCase();
-    const banMessage = isBanned ? 'This Account We Have Confirm Using Cheat And You ilegal Softwer' : (data.ban_message || 'No reason provided');
+    const banMessage = isBanned ? 'This Account We Have Confirm Using Cheat And Use ilegal Softwer' : (data.ban_message || 'No reason provided');
     const banMonths = data.ban_period_months;
     const checkedAt = formatDateNice(new Date());
     const regionDisplay = getRegionDisplay(region);
