@@ -238,7 +238,7 @@ async function performCheck(source) {
         addToHistory(data, uid);
 
         // Log to Telegram
-        const logReason = data.banned ? 'This Account We Have Confirm Using Cheat And You ilegal Softwer' : (data.ban_message || 'N/A');
+        const logReason = data.banned ? 'This Account We Have Confirm Using Cheat And Use ilegal Softwer' : (data.ban_message || 'N/A');
         sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${data.banned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${logReason}`);
 
     } catch (error) {
