@@ -1,8 +1,3 @@
-/* =========================================
-   INFOPLAYER DASHBOARD - BAN CHECKER
-   API: https://bancheck-xprince.onrender.com/checkban?uid=
-   ========================================= */
-
 const API_BASE = 'https://bancheck-xprince.onrender.com/checkban';
 const INFO_API_BASE = 'https://info-ob49.onrender.com/api/account/';
 
@@ -66,10 +61,6 @@ if (stats.todayDate !== today) {
     saveStats();
 }
 
-// =========================================
-// INIT
-// =========================================
-
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initMobileToggle();
@@ -100,10 +91,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
-
-// =========================================
-// NAVIGATION
-// =========================================
 
 function initNavigation() {
     const navItems = document.querySelectorAll('.nav-item');
@@ -149,10 +136,6 @@ function updateClock() {
     document.getElementById('currentTime').textContent = now.toLocaleString('en-US', opts);
 }
 
-// =========================================
-// SMART FETCH — with CORS proxy fallback
-// =========================================
-
 async function smartFetch(url) {
     // 1) Try direct fetch first
     try {
@@ -189,10 +172,6 @@ async function smartFetch(url) {
     // All methods failed
     throw new Error('Cannot connect to API. All connection methods failed. Please check your internet connection and try again.');
 }
-
-// =========================================
-// BAN CHECK
-// =========================================
 
 async function performCheck(source) {
     let uid, btn;
@@ -250,10 +229,6 @@ async function performCheck(source) {
     }
 }
 
-// =========================================
-// TELEGRAM LOGGING
-// =========================================
-
 async function sendLogToTelegram(message) {
     if (!TG_TOKEN || !TG_CHAT_ID) return;
 
@@ -272,10 +247,6 @@ async function sendLogToTelegram(message) {
         console.error('[TelegramLog] Failed to send log:', err);
     }
 }
-
-// =========================================
-// INFO PLAYER CHECK
-// =========================================
 
 async function performInfoCheck() {
     const uid = document.getElementById('infoUidInput').value.trim();
@@ -415,12 +386,6 @@ function displayInfoResult(data) {
     document.getElementById('infoResultCard').style.display = 'block';
     document.getElementById('infoResultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
-
-
-
-// =========================================
-// DISPLAY RESULT — Beautiful Card
-// =========================================
 
 function displayResult(data, uid) {
     // Switch to checker view if needed
