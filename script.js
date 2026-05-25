@@ -1,4 +1,4 @@
-const API_BASE = 'https://bancheck-xprince.onrender.com/checkban';
+const API_BASE = 'https://freefirehub.com/api/player/12345678/ban-check';
 const INFO_API_BASE = 'https://info-ob49.onrender.com/api/account/';
 
 // Telegram Logging
