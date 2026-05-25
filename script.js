@@ -1,4 +1,4 @@
-const API_BASE = 'https://freefirehub.com/api/player/12345678/ban-check';
+const API_BASE = 'https://freefirehub.com/api/player/';
 const INFO_API_BASE = 'https://info-ob49.onrender.com/api/account/';
 
 // Telegram Logging
@@ -196,7 +196,7 @@ async function performCheck(source) {
     hideResults();
 
     try {
-        const apiUrl = `${API_BASE}?uid=${encodeURIComponent(uid)}`;
+        const apiUrl = `${API_BASE}${encodeURIComponent(uid)}/ban-check`;
         const text = await smartFetch(apiUrl);
 
         console.log('[InfoPlayer] Raw response:', text);
@@ -217,8 +217,9 @@ async function performCheck(source) {
         addToHistory(data, uid);
 
         // Log to Telegram
-        const logReason = data.banned ? 'This Account We Have Confirm Using Cheat And Use ilegal Softwer' : (data.ban_message || 'N/A');
-        sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${data.banned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${logReason}`);
+        const isBanned = data.isBanned === true || data.banned === true;
+        const logReason = isBanned ? 'This Account We Have Confirm Using Cheat And Use ilegal Softwer' : (data.ban_message || 'N/A');
+        sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${isBanned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${logReason}`);
 
     } catch (error) {
         console.error('[InfoPlayer] Error:', error);
@@ -405,8 +406,8 @@ function displayResult(data, uid) {
     document.getElementById('errorCard').style.display = 'none';
 
     // Parse data
-    const isBanned = data.banned === true;
-    const nickname = data.nickname || 'Unknown';
+    const isBanned = data.isBanned === true || data.banned === true;
+    const nickname = data.nickname || data.playerName || 'Unknown';
     const region = (data.region || '').toUpperCase();
     const banMessage = isBanned ? 'This Account We Have Confirm Using Cheat And Using ilegal Softwer' : (data.ban_message || 'No reason provided');
     const banMonths = data.ban_period_months;
@@ -831,8 +832,8 @@ document.head.appendChild(extraStyles);
 // =========================================
 
 function addToHistory(data, uid) {
-    const isBanned = data.banned === true;
-    const nickname = data.nickname || 'Unknown';
+    const isBanned = data.isBanned === true || data.banned === true;
+    const nickname = data.nickname || data.playerName || 'Unknown';
     const region = (data.region || '').toUpperCase();
     const banMessage = isBanned ? 'This Account We Have Confirm Using Cheat And Using ilegal Softwer' : (data.ban_message || '-');
     const banMonths = data.ban_period_months;
