@@ -230,11 +230,16 @@ async function performCheck(source) {
 
 async function sendLogToTelegram(message) {
     try {
-        await fetch(`${BACKEND_URL}/api/telegram-log`, {
+        const response = await fetch(`${BACKEND_URL}/api/telegram-log`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message })
         });
+
+        if (!response.ok) {
+            const body = await response.text();
+            console.warn('[TelegramLog] Server returned error:', response.status, body);
+        }
     } catch (err) {
         console.error('[TelegramLog] Failed to send log:', err);
     }
