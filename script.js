@@ -1,10 +1,8 @@
-const API_BASE = 'https://freefirehub.com/api/player/';
+const BACKEND_URL = 'https://check-ban-backend.onrender.com';
+const API_BASE = `${BACKEND_URL}/api/player/`;
 const INFO_API_BASE = 'https://info-ob49.onrender.com/api/account/';
 
-// Telegram Logging
-const TG_TOKEN = '7846769778:AAHZNctt5FGhW6bvRgHzQh3x22tdEwn31ts';
-const TG_CHAT_ID = '1740214955'; // Updated with user's Chat ID
-
+// Telegram logging is now handled by the Render backend so the bot token is hidden.
 
 // CORS proxy fallbacks — tried in order if direct fetch fails
 const CORS_PROXIES = [
@@ -231,18 +229,11 @@ async function performCheck(source) {
 }
 
 async function sendLogToTelegram(message) {
-    if (!TG_TOKEN || !TG_CHAT_ID) return;
-
     try {
-        const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
-        await fetch(url, {
+        await fetch(`${BACKEND_URL}/api/telegram-log`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: TG_CHAT_ID,
-                text: message,
-                parse_mode: 'Markdown'
-            })
+            body: JSON.stringify({ message })
         });
     } catch (err) {
         console.error('[TelegramLog] Failed to send log:', err);
