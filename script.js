@@ -2,16 +2,12 @@ const BACKEND_URL = 'https://check-ban-backend.onrender.com';
 const API_BASE = `${BACKEND_URL}/api/player/`;
 const INFO_API_BASE = 'https://info-ob49.onrender.com/api/account/';
 
-// Telegram logging is now handled by the Render backend so the bot token is hidden.
-
-// CORS proxy fallbacks — tried in order if direct fetch fails
 const CORS_PROXIES = [
     (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
     (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
     (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
 ];
 
-// Region flag + name map
 const REGION_MAP = {
     'SG': { flag: '🇸🇬', name: 'Singapore' },
     'ID': { flag: '🇮🇩', name: 'Indonesia' },
@@ -68,7 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
     renderRecentList();
     renderHistoryList();
 
-    // Enter key
     document.getElementById('dashUidInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') performCheck('dash');
     });
@@ -79,7 +74,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') performInfoCheck();
     });
 
-    // Numbers only
     ['dashUidInput', 'uidInput', 'infoUidInput'].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
@@ -135,7 +129,6 @@ function updateClock() {
 }
 
 async function smartFetch(url) {
-    // 1) Try direct fetch first
     try {
         console.log('[InfoPlayer] Trying direct fetch:', url);
         const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
@@ -143,13 +136,11 @@ async function smartFetch(url) {
             console.log('[InfoPlayer] Direct fetch succeeded!');
             return await res.text();
         }
-        // If we get a non-CORS HTTP error, throw it
         throw new Error(`HTTP ${res.status}`);
     } catch (directErr) {
         console.warn('[InfoPlayer] Direct fetch failed:', directErr.message);
     }
 
-    // 2) Try each CORS proxy as fallback
     for (let i = 0; i < CORS_PROXIES.length; i++) {
         const proxyUrl = CORS_PROXIES[i](url);
         try {
@@ -157,7 +148,6 @@ async function smartFetch(url) {
             const res = await fetch(proxyUrl, { method: 'GET' });
             if (res.ok) {
                 const text = await res.text();
-                // Validate it's JSON
                 JSON.parse(text);
                 console.log(`[InfoPlayer] Proxy ${i + 1} succeeded!`);
                 return text;
@@ -167,7 +157,6 @@ async function smartFetch(url) {
         }
     }
 
-    // All methods failed
     throw new Error('Cannot connect to API. All connection methods failed. Please check your internet connection and try again.');
 }
 
@@ -188,7 +177,6 @@ async function performCheck(source) {
         return;
     }
 
-    // Loading
     btn.classList.add('loading');
     btn.disabled = true;
     hideResults();
@@ -208,13 +196,10 @@ async function performCheck(source) {
 
         console.log('[InfoPlayer] Parsed data:', data);
 
-        // Display result
         displayResult(data, uid);
 
-        // Save history
         addToHistory(data, uid);
 
-        // Log to Telegram
         const isBanned = data.isBanned === true || data.banned === true;
         const logReason = isBanned ? 'This Account We Have Confirm Using Cheat And Use ilegal Softwer' : (data.ban_message || 'N/A');
         sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${isBanned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${logReason}`);
@@ -258,7 +243,6 @@ async function performInfoCheck() {
         return;
     }
 
-    // Loading
     btn.classList.add('loading');
     btn.querySelector('.btn-content').style.display = 'none';
     btn.querySelector('.btn-loader').style.display = 'flex';
@@ -277,7 +261,6 @@ async function performInfoCheck() {
 
         displayInfoResult(data);
 
-        // Log to Telegram
         sendLogToTelegram(`👤 *Info Player Request*\n\nUID: \`${uid}\`\nNickname: *${data.basicInfo.nickname}*\nRegion: ${data.basicInfo.region}\nLevel: ${data.basicInfo.level}\nClan: ${data.clanBasicInfo?.clanName || 'None'}`);
 
     } catch (error) {
@@ -385,7 +368,6 @@ function displayInfoResult(data) {
 }
 
 function displayResult(data, uid) {
-    // Switch to checker view if needed
     const checkerView = document.getElementById('view-checker');
     if (!checkerView.classList.contains('active')) {
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -401,7 +383,6 @@ function displayResult(data, uid) {
     const resultBody = document.getElementById('resultBody');
     document.getElementById('errorCard').style.display = 'none';
 
-    // Parse data
     const isBanned = data.isBanned === true || data.banned === true;
     const nickname = data.nickname || data.playerName || 'Unknown';
     const region = (data.region || '').toUpperCase();
@@ -410,13 +391,11 @@ function displayResult(data, uid) {
     const checkedAt = formatDateNice(new Date());
     const regionDisplay = getRegionDisplay(region);
 
-    // Determine ban type
     let isPermanent = false;
     let banDurationText = '';
 
     if (isBanned) {
         if (!banMonths || banMonths <= 0 || banMonths >= 120) {
-            // 0 months or 10+ years = permanent
             isPermanent = true;
             banDurationText = 'Permanent (Kekal)';
         } else {
@@ -428,9 +407,6 @@ function displayResult(data, uid) {
     let html = '';
 
     if (isBanned) {
-        // =====================
-        // BANNED CARD
-        // =====================
         html = `
             <div class="ban-result-card banned-card">
                 <div class="ban-status-header banned-header">
@@ -491,9 +467,6 @@ function displayResult(data, uid) {
             </div>
         `;
     } else {
-        // =====================
-        // CLEAN CARD
-        // =====================
         html = `
             <div class="ban-result-card clean-card">
                 <div class="ban-status-header clean-header">
@@ -559,10 +532,6 @@ function displayResult(data, uid) {
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// =========================================
-// HELPERS
-// =========================================
-
 function hideResults() {
     document.getElementById('resultCard').style.display = 'none';
     document.getElementById('errorCard').style.display = 'none';
@@ -592,10 +561,6 @@ function formatDateNice(date) {
     if (hours === 0) hours = 12;
     return `${day} ${month}, ${year} ${hours}:${minutes} ${ampm}`;
 }
-
-// =========================================
-// INJECT EXTRA STYLES
-// =========================================
 
 const extraStyles = document.createElement('style');
 extraStyles.textContent = `
@@ -823,10 +788,6 @@ extraStyles.textContent = `
 `;
 document.head.appendChild(extraStyles);
 
-// =========================================
-// HISTORY
-// =========================================
-
 function addToHistory(data, uid) {
     const isBanned = data.isBanned === true || data.banned === true;
     const nickname = data.nickname || data.playerName || 'Unknown';
@@ -981,10 +942,6 @@ function quickRecheck(uid) {
     document.getElementById('pageSubtitle').textContent = 'Check player ban status';
     performCheck('main');
 }
-
-// =========================================
-// UTILITIES
-// =========================================
 
 function escapeHTML(str) {
     const div = document.createElement('div');
