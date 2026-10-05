@@ -1,13 +1,57 @@
 const BACKEND_URL = 'https://check-ban-backend.onrender.com';
 const API_BASE = `${BACKEND_URL}/api/player/`;
-const INFO_API_BASE = 'https://info-ob49.onrender.com/api/account/';
 
+// ============================================================
+// INFO PLAYER API  (sumber asal: folder free-freefire-main)
+// ------------------------------------------------------------
+// API lama (info-ob49.onrender.com) dah MATI, jadi di bawah
+// kita ada beberapa sumber dan ia dicuba mengikut turutan.
+// Isi API key di bawah bila dah ada — Info Player terus hidup.
+// ============================================================
+const THUG_API_KEY = '';       // raw.thug4ff.xyz  -> API yang free-freefire-main guna dulu
+const GAMESKINBO_API_KEY = ''; // api.gameskinbo.com -> free plan (daftar percuma, 50 panggilan)
+
+const INFO_NOT_CONFIGURED_MSG =
+    '⚠️ Info Player API is not configured yet. ' +
+    'Isi API key dalam script.js (THUG_API_KEY / GAMESKINBO_API_KEY) atau set INFO_API_URL di backend .env.';
+
+const INFO_SOURCES = [
+    {
+        // Backend sendiri (folder check-ban-backend-main) — tak perlu CORS proxy
+        name: 'check-ban-backend',
+        enabled: true,
+        proxy: false,
+        url: (uid, region) => `${BACKEND_URL}/api/account?uid=${uid}&region=${region}`,
+        headers: {},
+    },
+    {
+        // API dari folder free-freefire-main (http sahaja + tiada CORS -> kena guna proxy)
+        name: 'free-freefire-main (raw.thug4ff.xyz)',
+        enabled: !!THUG_API_KEY,
+        proxy: true,
+        url: (uid, region) => `http://raw.thug4ff.xyz/info?uid=${uid}&key=${THUG_API_KEY}`,
+        headers: {},
+    },
+    {
+        // Alternatif bebas key (CORS dibenarkan)
+        name: 'gameskinbo',
+        enabled: !!GAMESKINBO_API_KEY,
+        proxy: false,
+        url: (uid, region) => `https://api.gameskinbo.com/ff-info/get?uid=${uid}&region=${region}`,
+        headers: { 'x-api-key': GAMESKINBO_API_KEY },
+    },
+];
+
+// Telegram logging is now handled by the Render backend so the bot token is hidden.
+
+// CORS proxy fallbacks — tried in order if direct fetch fails
 const CORS_PROXIES = [
     (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
     (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
     (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
 ];
 
+// Region flag + name map
 const REGION_MAP = {
     'SG': { flag: '🇸🇬', name: 'Singapore' },
     'ID': { flag: '🇮🇩', name: 'Indonesia' },
@@ -35,7 +79,6 @@ function getRegionDisplay(regionCode) {
     return code || 'Unknown';
 }
 
-// State
 let searchHistory = [];
 let stats = { total: 0, banned: 0, clean: 0, today: 0, todayDate: '' };
 
@@ -54,6 +97,22 @@ if (stats.todayDate !== today) {
     stats.todayDate = today;
     saveStats();
 }
+
+// =========================================
+// BAN USER STATE (rekod ban dalam website)
+// =========================================
+const BAN_STORAGE_KEY = 'infoplayer_bans';
+const BAN_DURATIONS = [7, 30];
+
+let bannedAccounts = {};
+try {
+    const parsedBans = JSON.parse(localStorage.getItem(BAN_STORAGE_KEY) || '{}');
+    if (parsedBans && typeof parsedBans === 'object' && !Array.isArray(parsedBans)) bannedAccounts = parsedBans;
+} catch (e) { bannedAccounts = {}; }
+
+let pendingBan = null;   // account yang sedang dipilih untuk di-ban
+let selectedBanDays = 7; // tempoh pilihan (7 / 30 hari)
+let lastResult = null;   // result terakhir supaya boleh render semula selepas ban/unban
 
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
@@ -82,6 +141,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
+
+    // Ban modal — tutup bila klik luar dialog atau tekan ESC
+    const banModal = document.getElementById('banModal');
+    if (banModal) {
+        banModal.addEventListener('click', (e) => {
+            if (e.target === banModal) closeBanModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && banModal.style.display === 'flex') closeBanModal();
+        });
+    }
 });
 
 function initNavigation() {
@@ -129,6 +199,7 @@ function updateClock() {
 }
 
 async function smartFetch(url) {
+    // 1) Try direct fetch first
     try {
         console.log('[InfoPlayer] Trying direct fetch:', url);
         const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
@@ -136,11 +207,13 @@ async function smartFetch(url) {
             console.log('[InfoPlayer] Direct fetch succeeded!');
             return await res.text();
         }
+        // If we get a non-CORS HTTP error, throw it
         throw new Error(`HTTP ${res.status}`);
     } catch (directErr) {
         console.warn('[InfoPlayer] Direct fetch failed:', directErr.message);
     }
 
+    // 2) Try each CORS proxy as fallback
     for (let i = 0; i < CORS_PROXIES.length; i++) {
         const proxyUrl = CORS_PROXIES[i](url);
         try {
@@ -148,6 +221,7 @@ async function smartFetch(url) {
             const res = await fetch(proxyUrl, { method: 'GET' });
             if (res.ok) {
                 const text = await res.text();
+                // Validate it's JSON
                 JSON.parse(text);
                 console.log(`[InfoPlayer] Proxy ${i + 1} succeeded!`);
                 return text;
@@ -157,7 +231,106 @@ async function smartFetch(url) {
         }
     }
 
+    // All methods failed
     throw new Error('Cannot connect to API. All connection methods failed. Please check your internet connection and try again.');
+}
+
+// ============================================================
+// INFO PLAYER — cuba setiap sumber API mengikut turutan
+// ============================================================
+async function fetchInfoSourceText(source, uid, region) {
+    const url = source.url(uid, region);
+    // Sumber yang perlu CORS proxy (http / tiada header CORS)
+    if (source.proxy) return smartFetch(url);
+
+    const res = await fetch(url, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json', ...(source.headers || {}) }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.text();
+}
+
+// Tukar pelbagai bentuk respons API kepada format yang dipaparkan website
+// (format asal free-freefire-main: basicInfo / clanBasicInfo / dll)
+function normalizeInfoData(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+
+    let d = raw;
+
+    // Bungkus balik jika data bersarang
+    if (!d.basicInfo && !d.AccountInfo && (d.data || d.result || d.response)) {
+        d = d.data || d.result || d.response;
+    }
+    if (!d || typeof d !== 'object') return null;
+
+    // Format free-freefire-main / freefirecommunity -> terus guna
+    if (d.basicInfo && d.basicInfo.nickname) return d;
+
+    // Format AccountInfo (gameskinbo / player-info style) -> tukar ke format website
+    const a = d.AccountInfo || d.accountInfo;
+    if (a) {
+        const g = d.GuildInfo || d.guildInfo || {};
+        const profile = d.AccountProfileInfo || d.profileInfo || {};
+        return {
+            basicInfo: {
+                accountId: a.AccountId || a.accountId || d.uid || d.player_id || '',
+                nickname: a.AccountName || a.nickname || a.name || '',
+                level: a.AccountLevel ?? a.level ?? '',
+                exp: a.AccountEXP ?? a.exp ?? 0,
+                region: a.AccountRegion || a.region || '',
+                liked: a.AccountLikes ?? a.liked ?? 0,
+                badgeCnt: a.AccountBPBadges ?? a.badgeCnt ?? 0,
+                bannerId: a.AccountBannerId ?? a.bannerId,
+                headPic: a.AccountAvatarId ?? a.headPic,
+                releaseVersion: a.ReleaseVersion || a.releaseVersion || 'Unknown',
+                rankingPoints: a.BrRankPoint ?? a.rankingPoints ?? 0,
+                csRankingPoints: a.CsRankPoint ?? a.csRankingPoints ?? 0,
+                createAt: a.AccountCreateTime ?? a.createAt,
+                lastLoginAt: a.AccountLastLogin ?? a.lastLoginAt,
+            },
+            clanBasicInfo: (g.GuildID || g.GuildId || g.clanId) ? {
+                clanId: g.GuildID || g.GuildId || g.clanId,
+                clanName: g.GuildName || g.clanName,
+                clanLevel: g.GuildLevel ?? g.clanLevel,
+                memberNum: g.GuildMember ?? g.memberNum,
+                capacity: g.GuildCapacity ?? g.capacity,
+            } : null,
+            creditScoreInfo: d.creditScoreInfo || { creditScore: 100 },
+            petInfo: d.petInfo || null,
+            profileInfo: {
+                avatarId: profile.AvatarId || profile.avatarId,
+                equipedSkills: profile.EquippedSkills || profile.equipedSkills || [],
+            },
+            socialInfo: d.socialInfo || d.socialinfo || {},
+            captainBasicInfo: d.captainBasicInfo || null,
+        };
+    }
+
+    return d;
+}
+
+async function fetchPlayerInfo(uid, region) {
+    const sources = INFO_SOURCES.filter(s => s.enabled);
+    if (sources.length === 0) throw new Error(INFO_NOT_CONFIGURED_MSG);
+
+    const errors = [];
+    for (const source of sources) {
+        try {
+            console.log(`[InfoPlayer] Trying info source: ${source.name}`);
+            const data = normalizeInfoData(JSON.parse(await fetchInfoSourceText(source, uid, region)));
+            if (data && data.basicInfo && data.basicInfo.nickname) {
+                console.log(`[InfoPlayer] Info source "${source.name}" succeeded!`);
+                return data;
+            }
+            errors.push(`${source.name}: no player data`);
+        } catch (err) {
+            console.warn(`[InfoPlayer] Info source "${source.name}" failed:`, err.message);
+            errors.push(`${source.name}: ${err.message}`);
+        }
+    }
+
+    throw new Error(`${INFO_NOT_CONFIGURED_MSG}\nDetails: ${errors.join(' | ')}`);
 }
 
 async function performCheck(source) {
@@ -177,6 +350,7 @@ async function performCheck(source) {
         return;
     }
 
+    // Loading
     btn.classList.add('loading');
     btn.disabled = true;
     hideResults();
@@ -196,11 +370,68 @@ async function performCheck(source) {
 
         console.log('[InfoPlayer] Parsed data:', data);
 
+        // Normalize: unwrap nested data property if present
+        if (data && typeof data === 'object' && !data.isBanned && !data.banned && !data.nickname && !data.playerName) {
+            if (data.data) {
+                console.log('[InfoPlayer] Unwrapping nested .data:', data.data);
+                data = data.data;
+            } else if (data.result) {
+                console.log('[InfoPlayer] Unwrapping nested .result:', data.result);
+                data = data.result;
+            } else if (data.response) {
+                console.log('[InfoPlayer] Unwrapping nested .response:', data.response);
+                data = data.response;
+            }
+        }
+
+        // Normalize field names from various API formats
+        if (data.isBanned === undefined && data.banned === undefined) {
+            if (data.is_banned !== undefined) data.isBanned = !!data.is_banned;
+            else if (data.banStatus !== undefined) data.isBanned = data.banStatus === true || data.banStatus === 'banned';
+            else if (data.BanStatus !== undefined) data.isBanned = data.BanStatus === true || data.BanStatus === 'banned' || data.BanStatus === 1;
+            else if (data.status === 'banned' || data.status === 'BANNED') data.isBanned = true;
+            else if (data.ban !== undefined) data.isBanned = !!data.ban;
+            else if (data.isBan !== undefined) data.isBanned = !!data.isBan;
+        }
+        if (data.nickname === undefined && data.playerName === undefined) {
+            if (data.name !== undefined) data.nickname = data.name;
+            else if (data.player_name !== undefined) data.nickname = data.player_name;
+            else if (data.PlayerNickname !== undefined) data.nickname = data.PlayerNickname;
+            else if (data.userName !== undefined) data.nickname = data.userName;
+            else if (data.basicInfo && data.basicInfo.nickname) data.nickname = data.basicInfo.nickname;
+            else if (data.accountInfo && data.accountInfo.nickname) data.nickname = data.accountInfo.nickname;
+        }
+        if (data.region === undefined) {
+            if (data.server !== undefined) data.region = data.server;
+            else if (data.serverRegion !== undefined) data.region = data.serverRegion;
+            else if (data.GameServerID !== undefined) data.region = data.GameServerID;
+            else if (data.basicInfo && data.basicInfo.region) data.region = data.basicInfo.region;
+            else if (data.accountInfo && data.accountInfo.region) data.region = data.accountInfo.region;
+        }
+        if (data.ban_message === undefined) {
+            if (data.reason !== undefined) data.ban_message = data.reason;
+            else if (data.banReason !== undefined) data.ban_message = data.banReason;
+            else if (data.BanReason !== undefined) data.ban_message = data.BanReason;
+            else if (data.message !== undefined) data.ban_message = data.message;
+            else if (data.banMessage !== undefined) data.ban_message = data.banMessage;
+        }
+        if (data.ban_period_months === undefined) {
+            if (data.banMonths !== undefined) data.ban_period_months = data.banMonths;
+            else if (data.ban_months !== undefined) data.ban_period_months = data.ban_months;
+            else if (data.BanPeriod !== undefined) data.ban_period_months = data.BanPeriod;
+            else if (data.banPeriod !== undefined) data.ban_period_months = data.banPeriod;
+        }
+
+        console.log('[InfoPlayer] Normalized data:', data);
+
+        // Display result
         displayResult(data, uid);
 
+        // Save history
         addToHistory(data, uid);
 
-        const isBanned = data.isBanned === true || data.banned === true;
+        // Log to Telegram
+        const isBanned = data.isBanned === true || data.banned === true || data.isBanned === 1 || data.banned === 1;
         const logReason = isBanned ? 'This Account We Have Confirm Using Cheat And Use ilegal Softwer' : (data.ban_message || 'N/A');
         sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${isBanned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${logReason}`);
 
@@ -215,16 +446,11 @@ async function performCheck(source) {
 
 async function sendLogToTelegram(message) {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/telegram-log`, {
+        await fetch(`${BACKEND_URL}/api/telegram-log`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message })
         });
-
-        if (!response.ok) {
-            const body = await response.text();
-            console.warn('[TelegramLog] Server returned error:', response.status, body);
-        }
     } catch (err) {
         console.error('[TelegramLog] Failed to send log:', err);
     }
@@ -243,6 +469,7 @@ async function performInfoCheck() {
         return;
     }
 
+    // Loading
     btn.classList.add('loading');
     btn.querySelector('.btn-content').style.display = 'none';
     btn.querySelector('.btn-loader').style.display = 'flex';
@@ -251,9 +478,7 @@ async function performInfoCheck() {
     errorCard.style.display = 'none';
 
     try {
-        const url = `${INFO_API_BASE}?uid=${uid}&region=${region.toUpperCase()}`;
-        const text = await smartFetch(url);
-        const data = JSON.parse(text);
+        const data = await fetchPlayerInfo(uid, region.toUpperCase());
 
         if (!data.basicInfo || !data.basicInfo.nickname) {
             throw new Error('Player data not found. Please check UID and region.');
@@ -261,6 +486,7 @@ async function performInfoCheck() {
 
         displayInfoResult(data);
 
+        // Log to Telegram
         sendLogToTelegram(`👤 *Info Player Request*\n\nUID: \`${uid}\`\nNickname: *${data.basicInfo.nickname}*\nRegion: ${data.basicInfo.region}\nLevel: ${data.basicInfo.level}\nClan: ${data.clanBasicInfo?.clanName || 'None'}`);
 
     } catch (error) {
@@ -304,11 +530,11 @@ function displayInfoResult(data) {
 
     let textRes = `Player Information
 ┌ ACCOUNT BASIC INFO
-├─ Name: ${escapeHTML(b.nickname)}
-├─ UID: ${b.accountId}
-├─ Level: ${b.level} (Exp: ${b.exp})
+├─ Name: ${escapeHTML(b.nickname || 'Not found')}
+├─ UID: ${b.accountId || 'Not found'}
+├─ Level: ${b.level ?? 'Not found'} (Exp: ${b.exp ?? 0})
 ├─ Region: ${regionDisplay}
-├─ Likes: ${b.liked.toLocaleString()}
+├─ Likes: ${Number(b.liked || 0).toLocaleString()}
 ├─ Honor Score: ${credit ? credit.creditScore : '100'}
 └─ Signature: ${escapeHTML(s?.signature || 'No signature set')}
 
@@ -368,6 +594,7 @@ function displayInfoResult(data) {
 }
 
 function displayResult(data, uid) {
+    // Switch to checker view if needed
     const checkerView = document.getElementById('view-checker');
     if (!checkerView.classList.contains('active')) {
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -383,7 +610,11 @@ function displayResult(data, uid) {
     const resultBody = document.getElementById('resultBody');
     document.getElementById('errorCard').style.display = 'none';
 
-    const isBanned = data.isBanned === true || data.banned === true;
+    // Simpan result terpasang supaya boleh render semula selepas ban / unban
+    lastResult = { data, uid };
+
+    // Parse data
+    const isBanned = data.isBanned === true || data.banned === true || data.isBanned === 1 || data.isBanned === 'true' || data.banned === 1 || data.banned === 'true';
     const nickname = data.nickname || data.playerName || 'Unknown';
     const region = (data.region || '').toUpperCase();
     const banMessage = isBanned ? 'This Account We Have Confirm Using Cheat And Using ilegal Softwer' : (data.ban_message || 'No reason provided');
@@ -391,11 +622,16 @@ function displayResult(data, uid) {
     const checkedAt = formatDateNice(new Date());
     const regionDisplay = getRegionDisplay(region);
 
+    // Rekod ban buatan sendiri (feature Ban User)
+    const localBan = getBanRecord(uid);
+
+    // Determine ban type
     let isPermanent = false;
     let banDurationText = '';
 
     if (isBanned) {
         if (!banMonths || banMonths <= 0 || banMonths >= 120) {
+            // 0 months or 10+ years = permanent
             isPermanent = true;
             banDurationText = 'Permanent (Kekal)';
         } else {
@@ -404,9 +640,13 @@ function displayResult(data, uid) {
         }
     }
 
+    const escapedUid = escapeHTML(String(uid));
     let html = '';
 
     if (isBanned) {
+        // =====================
+        // BANNED CARD
+        // =====================
         html = `
             <div class="ban-result-card banned-card">
                 <div class="ban-status-header banned-header">
@@ -417,8 +657,10 @@ function displayResult(data, uid) {
                         </svg>
                     </div>
                     <div class="ban-status-text">
-                        <h2>🔴 Permanently Banned !</h2>
-                        <p class="ban-subtitle">This account has been permanently suspended</p>
+                        <h2>${isPermanent ? '🔴 Permanently Banned !' : `🔴 Banned — ${banDurationText}`}</h2>
+                        <p class="ban-subtitle">${isPermanent
+                            ? 'This account has been permanently suspended'
+                            : `This account is suspended for ${banMonths} month${banMonths > 1 ? 's' : ''}`}</p>
                     </div>
                 </div>
 
@@ -461,12 +703,90 @@ function displayResult(data, uid) {
                     </div>
                 </div>
 
+                <div class="ban-footer ${isPermanent ? 'permanent-footer' : 'trial-footer'}">
+                    ${isPermanent
+                        ? '🔒 This ban is <strong>permanent</strong> and cannot be appealed through normal channels.'
+                        : `⏳ This ban is <strong>temporary</strong> — it will be lifted after ${banDurationText.replace(' (Sementara)', '')}.`}
+                </div>
+            </div>
+        `;
+    } else if (localBan) {
+        // =====================
+        // LOCAL BANNED CARD (feature Ban User)
+        // =====================
+        const daysLeft = getBanDaysLeft(localBan);
+        html = `
+            <div class="ban-result-card banned-card local-ban-card">
+                <div class="ban-status-header banned-header">
+                    <div class="ban-status-icon banned-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="36" height="36">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                        </svg>
+                    </div>
+                    <div class="ban-status-text">
+                        <h2>⛔ Banned — ${localBan.days} Day${localBan.days > 1 ? 's' : ''}</h2>
+                        <p class="ban-subtitle">Ban record on this website · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left</p>
+                    </div>
+                </div>
+
+                <div class="ban-details">
+                    <div class="ban-detail-row">
+                        <div class="ban-detail-icon">📝</div>
+                        <div class="ban-detail-content">
+                            <span class="ban-detail-label">Reason</span>
+                            <span class="ban-detail-value ban-reason-text">${escapeHTML(localBan.reason || 'Violation of the rules')}</span>
+                        </div>
+                    </div>
+                    <div class="ban-detail-row">
+                        <div class="ban-detail-icon">👤</div>
+                        <div class="ban-detail-content">
+                            <span class="ban-detail-label">Nickname</span>
+                            <span class="ban-detail-value">${escapeHTML(localBan.nickname || nickname)}</span>
+                        </div>
+                    </div>
+                    <div class="ban-detail-row">
+                        <div class="ban-detail-icon">🆔</div>
+                        <div class="ban-detail-content">
+                            <span class="ban-detail-label">Player UID</span>
+                            <span class="ban-detail-value uid-text">${escapedUid}</span>
+                        </div>
+                    </div>
+                    <div class="ban-detail-row">
+                        <div class="ban-detail-icon">📅</div>
+                        <div class="ban-detail-content">
+                            <span class="ban-detail-label">Banned At</span>
+                            <span class="ban-detail-value">${formatDateNice(new Date(localBan.bannedAt))}</span>
+                        </div>
+                    </div>
+                    <div class="ban-detail-row">
+                        <div class="ban-detail-icon">⏳</div>
+                        <div class="ban-detail-content">
+                            <span class="ban-detail-label">Expires At</span>
+                            <span class="ban-detail-value">${formatDateNice(new Date(localBan.expiresAt))}</span>
+                        </div>
+                    </div>
+                    <div class="ban-detail-row">
+                        <div class="ban-detail-icon">🌐</div>
+                        <div class="ban-detail-content">
+                            <span class="ban-detail-label">Region</span>
+                            <span class="ban-detail-value">${regionDisplay}</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="ban-footer permanent-footer">
-                    🔒 This ban is <strong>permanent</strong> and cannot be appealed through normal channels.
+                    🚫 Account ini <strong>direkodkan banned</strong> selama ${localBan.days} hari.
+                </div>
+                <div class="ban-actions">
+                    <button type="button" class="btn-unban" onclick="unbanAccount('${escapedUid}')">🔓 Unban Account</button>
                 </div>
             </div>
         `;
     } else {
+        // =====================
+        // CLEAN CARD
+        // =====================
         html = `
             <div class="ban-result-card clean-card">
                 <div class="ban-status-header clean-header">
@@ -523,6 +843,12 @@ function displayResult(data, uid) {
                 <div class="ban-footer clean-footer">
                     ✅ This account is in <strong>good standing</strong>. No violations detected.
                 </div>
+                <div class="ban-actions">
+                    <button type="button" class="btn-ban" onclick="openBanModal('${escapedUid}')">
+                        ⛔ Ban Account
+                    </button>
+                    <span class="ban-hint">Pilih tempoh ban: <strong>7 hari</strong> atau <strong>30 hari</strong></span>
+                </div>
             </div>
         `;
     }
@@ -531,6 +857,155 @@ function displayResult(data, uid) {
     resultCard.style.display = 'block';
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+
+// =========================================
+// BAN USER (rekod ban + log Telegram)
+// =========================================
+
+function saveBannedAccounts() {
+    localStorage.setItem(BAN_STORAGE_KEY, JSON.stringify(bannedAccounts));
+}
+
+function getBanRecord(uid) {
+    const key = String(uid);
+    const rec = bannedAccounts[key];
+    if (!rec) return null;
+
+    // Buang automatik bila tempoh dah habis
+    if (rec.expiresAt && rec.expiresAt <= Date.now()) {
+        delete bannedAccounts[key];
+        saveBannedAccounts();
+        return null;
+    }
+    return rec;
+}
+
+function getBanDaysLeft(rec) {
+    if (!rec || !rec.expiresAt) return 0;
+    return Math.max(0, Math.ceil((rec.expiresAt - Date.now()) / 86400000));
+}
+
+function openBanModal(uid) {
+    pendingBan = { uid: String(uid), nickname: 'Unknown', region: '' };
+
+    if (lastResult && String(lastResult.uid) === String(uid)) {
+        pendingBan.nickname = lastResult.data.nickname || lastResult.data.playerName || 'Unknown';
+        pendingBan.region = (lastResult.data.region || '').toUpperCase();
+    }
+
+    selectedBanDays = BAN_DURATIONS[0];
+    renderBanDurationButtons();
+
+    document.getElementById('banModalUid').textContent = pendingBan.uid;
+    document.getElementById('banModalNickname').textContent = pendingBan.nickname;
+    document.getElementById('banReasonInput').value = '';
+    document.getElementById('banModal').style.display = 'flex';
+}
+
+function closeBanModal() {
+    const modal = document.getElementById('banModal');
+    if (modal) modal.style.display = 'none';
+    pendingBan = null;
+}
+
+function renderBanDurationButtons() {
+    document.querySelectorAll('.ban-duration-btn').forEach(btn => {
+        btn.classList.toggle('active', Number(btn.dataset.days) === selectedBanDays);
+    });
+}
+
+function selectBanDuration(days) {
+    selectedBanDays = Number(days);
+    renderBanDurationButtons();
+}
+
+function confirmBan() {
+    if (!pendingBan) return;
+
+    const uid = String(pendingBan.uid);
+    const now = Date.now();
+    const reasonEl = document.getElementById('banReasonInput');
+    const reason = ((reasonEl && reasonEl.value) || '').trim() || 'Violation of the rules';
+    const expiresAt = now + (selectedBanDays * 86400000);
+
+    const alreadyBanned = !!bannedAccounts[uid];
+
+    bannedAccounts[uid] = {
+        uid,
+        nickname: pendingBan.nickname || 'Unknown',
+        region: pendingBan.region || '',
+        days: selectedBanDays,
+        reason,
+        bannedAt: now,
+        expiresAt
+    };
+    saveBannedAccounts();
+
+    // Kemas kini statistik dashboard
+    if (!alreadyBanned) {
+        stats.banned++;
+        saveStats();
+        updateStats();
+    }
+
+    const banEntry = bannedAccounts[uid];
+    sendLogToTelegram(
+        `⛔ *Ban Account*\n\n` +
+        `UID: \`${uid}\`\n` +
+        `Nickname: *${banEntry.nickname}*\n` +
+        `Region: ${banEntry.region || 'Unknown'}\n` +
+        `Duration: *${selectedBanDays} days*\n` +
+        `Banned at: *${new Date(now).toLocaleString()}*\n` +
+        `Expires: *${new Date(expiresAt).toLocaleString()}*\n` +
+        `Reason: ${reason}`
+    );
+
+    closeBanModal();
+    refreshResultCard();
+    showToast(`⛔ UID ${uid} banned for ${selectedBanDays} days`, 'danger');
+}
+
+function unbanAccount(uid) {
+    const key = String(uid);
+    if (!bannedAccounts[key]) return;
+
+    if (!confirm(`Unban UID ${key}?`)) return;
+
+    delete bannedAccounts[key];
+    saveBannedAccounts();
+
+    stats.banned = Math.max(0, stats.banned - 1);
+    saveStats();
+    updateStats();
+
+    sendLogToTelegram(`🔓 *Unban Account*\n\nUID: \`${key}\`\nStatus: ✅ CLEAN (unban by admin)`);
+
+    refreshResultCard();
+    showToast(`🔓 UID ${key} has been unbanned`, 'success');
+}
+
+function refreshResultCard() {
+    if (lastResult) displayResult(lastResult.data, lastResult.uid);
+    renderRecentList();
+    renderHistoryList();
+}
+
+function showToast(message, type) {
+    let toast = document.getElementById('appToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'appToast';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.className = `app-toast show ${type || 'info'}`;
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => { toast.className = 'app-toast'; }, 3500);
+}
+
+// =========================================
+// HELPERS
+// =========================================
 
 function hideResults() {
     document.getElementById('resultCard').style.display = 'none';
@@ -561,6 +1036,10 @@ function formatDateNice(date) {
     if (hours === 0) hours = 12;
     return `${day} ${month}, ${year} ${hours}:${minutes} ${ampm}`;
 }
+
+// =========================================
+// INJECT EXTRA STYLES
+// =========================================
 
 const extraStyles = document.createElement('style');
 extraStyles.textContent = `
@@ -788,8 +1267,12 @@ extraStyles.textContent = `
 `;
 document.head.appendChild(extraStyles);
 
+// =========================================
+// HISTORY
+// =========================================
+
 function addToHistory(data, uid) {
-    const isBanned = data.isBanned === true || data.banned === true;
+    const isBanned = data.isBanned === true || data.banned === true || data.isBanned === 1 || data.banned === 1;
     const nickname = data.nickname || data.playerName || 'Unknown';
     const region = (data.region || '').toUpperCase();
     const banMessage = isBanned ? 'This Account We Have Confirm Using Cheat And Using ilegal Softwer' : (data.ban_message || '-');
@@ -898,8 +1381,8 @@ function renderHistoryList() {
 }
 
 function createHistoryItemHTML(entry) {
-    const statusClass = entry.isBanned ? 'banned' : 'clean';
-    const statusIcon = entry.isBanned ? '🚫' : '✅';
+    let statusClass = entry.isBanned ? 'banned' : 'clean';
+    let statusIcon = entry.isBanned ? '🚫' : '✅';
     const timeAgo = getTimeAgo(entry.timestamp);
 
     let statusBadge = '<span class="badge badge-clean">✅ Clean</span>';
@@ -911,6 +1394,14 @@ function createHistoryItemHTML(entry) {
         } else {
             statusBadge = '<span class="badge badge-banned">🚫 Banned</span>';
         }
+    }
+
+    // Rekod ban buatan sendiri (feature Ban User) mengatasi status API
+    const localBan = getBanRecord(entry.uid);
+    if (localBan) {
+        statusClass = 'banned';
+        statusIcon = '⛔';
+        statusBadge = `<span class="badge badge-localban">⛔ ${localBan.days}d Ban</span>`;
     }
 
     const regionDisplay = getRegionDisplay(entry.region);
@@ -942,6 +1433,10 @@ function quickRecheck(uid) {
     document.getElementById('pageSubtitle').textContent = 'Check player ban status';
     performCheck('main');
 }
+
+// =========================================
+// UTILITIES
+// =========================================
 
 function escapeHTML(str) {
     const div = document.createElement('div');
