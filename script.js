@@ -1,15 +1,8 @@
 const BACKEND_URL = 'https://check-ban-backend.onrender.com';
 const API_BASE = `${BACKEND_URL}/api/player/`;
 
-// ============================================================
-// INFO PLAYER API  (sumber asal: folder free-freefire-main)
-// ------------------------------------------------------------
-// API lama (info-ob49.onrender.com) dah MATI, jadi di bawah
-// kita ada beberapa sumber dan ia dicuba mengikut turutan.
-// Isi API key di bawah bila dah ada — Info Player terus hidup.
-// ============================================================
 const THUG_API_KEY = '';       // raw.thug4ff.xyz  -> API yang free-freefire-main guna dulu
-const GAMESKINBO_API_KEY = ''; // api.gameskinbo.com -> free plan (daftar percuma, 50 panggilan)
+const GAMESKINBO_API_KEY = 'MHTPZ_TWFybEXrBH6X-3GxNtQP62jxgo0rAPsx6CON4'; // api.gameskinbo.com -> free plan (daftar percuma, 50 panggilan)
 
 const INFO_NOT_CONFIGURED_MSG =
     '⚠️ Info Player API is not configured yet. ' +
@@ -17,7 +10,6 @@ const INFO_NOT_CONFIGURED_MSG =
 
 const INFO_SOURCES = [
     {
-        // Backend sendiri (folder check-ban-backend-main) — tak perlu CORS proxy
         name: 'check-ban-backend',
         enabled: true,
         proxy: false,
@@ -33,9 +25,12 @@ const INFO_SOURCES = [
         headers: {},
     },
     {
-        // Alternatif bebas key (CORS dibenarkan)
-        name: 'gameskinbo',
-        enabled: !!GAMESKINBO_API_KEY,
+        // DIMATIKAN — api.gameskinbo.com hanya benarkan CORS untuk domain
+        // gameskinbo.com, jadi panggilan terus dari browser memang tak akan
+        // lepas (akan diblock) tapi tetap membazir kuota API. Backend (#1)
+        // yang proxy kan ia.
+        name: 'gameskinbo (direct)',
+        enabled: false,
         proxy: false,
         url: (uid, region) => `https://api.gameskinbo.com/ff-info/get?uid=${uid}&region=${region}`,
         headers: { 'x-api-key': GAMESKINBO_API_KEY },
@@ -435,6 +430,11 @@ async function performCheck(source) {
         const logReason = isBanned ? 'This Account We Have Confirm Using Cheat And Use ilegal Softwer' : (data.ban_message || 'N/A');
         sendLogToTelegram(`🚫 *Ban Check Request*\n\nUID: \`${uid}\`\nNickname: *${data.nickname || 'Unknown'}*\nStatus: ${isBanned ? '❌ BANNED' : '✅ CLEAN'}\nRegion: ${data.region || 'Unknown'}\nReason: ${logReason}`);
 
+        // Garena's ban API never returns a nickname — if the backend didn't
+        // supply one either, try the Info Player sources right after the card
+        // renders so we never block the ban result.
+        if (!data.nickname) enrichNickname(data, uid);
+
     } catch (error) {
         console.error('[InfoPlayer] Error:', error);
         showError('❌ ' + (error.message || 'Failed to connect to the API. Please try again later.'));
@@ -454,6 +454,87 @@ async function sendLogToTelegram(message) {
     } catch (err) {
         console.error('[TelegramLog] Failed to send log:', err);
     }
+}
+
+// =========================================
+// NICKNAME ENRICHMENT (Ban Checker)
+// -----------------------------------------
+// The Garena ban API only returns {is_banned, period} — never a nickname.
+// When neither the backend nor the ban API supplied one, look the account
+// up through the Info Player sources and patch the already-rendered card.
+// Best-effort: failures are silent and the ban result is never blocked.
+// =========================================
+// Simpan dalam localStorage — plan percuma gameskinbo hanya 5 panggilan/minit,
+// jadi jangan bazir panggilan bila user buka page semula.
+const NICKNAME_CACHE_KEY = 'infoplayer_nicknames';
+let nicknameCache = {}; // uid -> { nickname, region }
+try {
+    nicknameCache = JSON.parse(localStorage.getItem(NICKNAME_CACHE_KEY) || '{}') || {};
+} catch (e) { nicknameCache = {}; }
+
+function saveNicknameCache() {
+    try { localStorage.setItem(NICKNAME_CACHE_KEY, JSON.stringify(nicknameCache)); } catch (e) { /* private mode */ }
+}
+
+async function enrichNickname(data, uid) {
+    if (!data || data.nickname) return;
+    if (nicknameCache[uid]) {
+        applyNickname(data, uid, nicknameCache[uid]);
+        return;
+    }
+
+    try {
+        const info = await fetchPlayerInfo(uid, data.region || '');
+        if (!info || !info.basicInfo || !info.basicInfo.nickname) return;
+
+        const resolved = {
+            nickname: info.basicInfo.nickname,
+            region: info.basicInfo.region || '',
+        };
+        nicknameCache[uid] = resolved;
+        saveNicknameCache();
+        applyNickname(data, uid, resolved);
+    } catch (err) {
+        // Sumber tak boleh dijangka / semua gagal — kad kekal "Unknown".
+        console.log('[BanChecker] Nickname not available:', err.message);
+    }
+}
+
+function applyNickname(data, uid, resolved) {
+    data.nickname = resolved.nickname;
+    if (resolved.region) data.region = resolved.region;
+
+    // Rekod ban mungkin telah disimpan dengan nickname "Unknown" sebelum
+    // enrichment selesai — kemas kini sekali supaya kekal konsisten.
+    const banRec = bannedAccounts[String(uid)];
+    if (banRec && (!banRec.nickname || banRec.nickname === 'Unknown')) {
+        banRec.nickname = resolved.nickname;
+        if (resolved.region && !banRec.region) banRec.region = resolved.region;
+        saveBannedAccounts();
+    }
+
+    // Re-render the card only if this is still the result being displayed.
+    if (lastResult && String(lastResult.uid) === String(uid)) {
+        lastResult.data = data;
+        refreshResultCard();
+    }
+    patchHistoryNickname(uid, resolved);
+}
+
+// Backfill the nickname into existing search-history entries too.
+function patchHistoryNickname(uid, resolved) {
+    let changed = false;
+    searchHistory.forEach((entry) => {
+        if (String(entry.uid) === String(uid) && (!entry.nickname || entry.nickname === 'Unknown')) {
+            entry.nickname = resolved.nickname;
+            if (resolved.region && !entry.region) entry.region = resolved.region;
+            changed = true;
+        }
+    });
+    if (!changed) return;
+    localStorage.setItem('infoplayer_history', JSON.stringify(searchHistory));
+    renderHistoryList();
+    renderRecentList();
 }
 
 async function performInfoCheck() {
@@ -593,6 +674,16 @@ function displayInfoResult(data) {
     document.getElementById('infoResultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+// Nama akaun datang dari Info Player API (Garena ban API langsung tak serve
+// nickname). Kalau API key belum diset, kami papar sebabnya berbanding
+// "Unknown" senyap supaya pengguna tahu apa yang perlu dibuat.
+function nicknameCell(value) {
+    if (!value || value === 'Unknown') {
+        return 'Unknown <span class="nick-hint">· Info API unavailable (rate limit / offline)</span>';
+    }
+    return escapeHTML(String(value));
+}
+
 function displayResult(data, uid) {
     // Switch to checker view if needed
     const checkerView = document.getElementById('view-checker');
@@ -676,7 +767,7 @@ function displayResult(data, uid) {
                         <div class="ban-detail-icon">👤</div>
                         <div class="ban-detail-content">
                             <span class="ban-detail-label">Nickname</span>
-                            <span class="ban-detail-value">${escapeHTML(nickname)}</span>
+                            <span class="ban-detail-value">${nicknameCell(nickname)}</span>
                         </div>
                     </div>
                     <div class="ban-detail-row">
@@ -742,7 +833,7 @@ function displayResult(data, uid) {
                         <div class="ban-detail-icon">👤</div>
                         <div class="ban-detail-content">
                             <span class="ban-detail-label">Nickname</span>
-                            <span class="ban-detail-value">${escapeHTML(localBan.nickname || nickname)}</span>
+                            <span class="ban-detail-value">${nicknameCell(localBan.nickname || nickname)}</span>
                         </div>
                     </div>
                     <div class="ban-detail-row">
@@ -814,7 +905,7 @@ function displayResult(data, uid) {
                         <div class="ban-detail-icon">👤</div>
                         <div class="ban-detail-content">
                             <span class="ban-detail-label">Nickname</span>
-                            <span class="ban-detail-value">${escapeHTML(nickname)}</span>
+                            <span class="ban-detail-value">${nicknameCell(nickname)}</span>
                         </div>
                     </div>
                     <div class="ban-detail-row">
