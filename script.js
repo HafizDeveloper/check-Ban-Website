@@ -263,7 +263,9 @@ function normalizeInfoData(raw) {
     if (d.basicInfo && d.basicInfo.nickname) return d;
 
     // Format AccountInfo (gameskinbo / player-info style) -> tukar ke format website
-    const a = d.AccountInfo || d.accountInfo;
+    // HL Gaming balas data RATA di root (AccountName / AccountRegion / ...),
+    // jadi kita sendiri sebagai "a" supaya bawah ni boleh baca terus.
+    const a = d.AccountInfo || d.accountInfo || (d.AccountName ? d : null);
     if (a) {
         const g = d.GuildInfo || d.guildInfo || {};
         const profile = d.AccountProfileInfo || d.profileInfo || {};
