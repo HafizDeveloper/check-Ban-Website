@@ -381,25 +381,29 @@
                     </div>
                 </div>
 
-                <label class="ban-modal-label">Pilih tempoh ban</label>
+                <label class="ban-modal-label">Select ban duration</label>
                 <div class="ban-duration-options">
                     <button type="button" class="ban-duration-btn active" data-days="7" onclick="selectBanDuration(7)">
                         <span class="ban-duration-num">7</span>
-                        <span class="ban-duration-unit">Hari</span>
+                        <span class="ban-duration-unit">Days</span>
                     </button>
                     <button type="button" class="ban-duration-btn" data-days="30" onclick="selectBanDuration(30)">
                         <span class="ban-duration-num">30</span>
-                        <span class="ban-duration-unit">Hari</span>
+                        <span class="ban-duration-unit">Days</span>
+                    </button>
+                    <button type="button" class="ban-duration-btn ban-duration-permanent" data-days="0" onclick="selectBanDuration(0)">
+                        <span class="ban-duration-num">∞</span>
+                        <span class="ban-duration-unit">Permanent</span>
                     </button>
                 </div>
 
-                <label class="ban-modal-label" for="banReasonInput">Sebab ban <em>(pilihan)</em></label>
+                <label class="ban-modal-label" for="banReasonInput">Reason <em>(optional)</em></label>
                 <input type="text" id="banReasonInput" class="ban-reason-input" maxlength="80"
-                    placeholder="Contoh: Gunakan cheat / hack">
+                    placeholder="e.g. Using cheats / hacks">
             </div>
 
             <div class="ban-modal-footer">
-                <button type="button" class="btn-cancel-ban" onclick="closeBanModal()">Batal</button>
+                <button type="button" class="btn-cancel-ban" onclick="closeBanModal()">Cancel</button>
                 <button type="button" class="btn-confirm-ban" onclick="confirmBan()">Confirm Ban</button>
             </div>
         </div>
