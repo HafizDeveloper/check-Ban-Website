@@ -97,7 +97,7 @@ if (stats.todayDate !== today) {
 // BAN USER STATE (rekod ban dalam website)
 // =========================================
 const BAN_STORAGE_KEY = 'infoplayer_bans';
-const BAN_DURATIONS = [7, 30];
+const BAN_DURATIONS = [7, 30, 0]; // 0 = Permanent (takkan luput sendiri)
 
 let bannedAccounts = {};
 try {
@@ -106,7 +106,7 @@ try {
 } catch (e) { bannedAccounts = {}; }
 
 let pendingBan = null;   // account yang sedang dipilih untuk di-ban
-let selectedBanDays = 7; // tempoh pilihan (7 / 30 hari)
+let selectedBanDays = 7; // tempoh pilihan: 7 / 30 hari, atau 0 = Permanent
 let lastResult = null;   // result terakhir supaya boleh render semula selepas ban/unban
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -202,13 +202,11 @@ async function smartFetch(url) {
             console.log('[InfoPlayer] Direct fetch succeeded!');
             return await res.text();
         }
-        // If we get a non-CORS HTTP error, throw it
         throw new Error(`HTTP ${res.status}`);
     } catch (directErr) {
         console.warn('[InfoPlayer] Direct fetch failed:', directErr.message);
     }
 
-    // 2) Try each CORS proxy as fallback
     for (let i = 0; i < CORS_PROXIES.length; i++) {
         const proxyUrl = CORS_PROXIES[i](url);
         try {
@@ -726,10 +724,10 @@ function displayResult(data, uid) {
         if (!banMonths || banMonths <= 0 || banMonths >= 120) {
             // 0 months or 10+ years = permanent
             isPermanent = true;
-            banDurationText = 'Permanent (Kekal)';
+            banDurationText = 'Permanent';
         } else {
             isPermanent = false;
-            banDurationText = `${banMonths} Month${banMonths > 1 ? 's' : ''} (Sementara)`;
+            banDurationText = `${banMonths} Month${banMonths > 1 ? 's' : ''} (Temporary)`;
         }
     }
 
@@ -799,7 +797,7 @@ function displayResult(data, uid) {
                 <div class="ban-footer ${isPermanent ? 'permanent-footer' : 'trial-footer'}">
                     ${isPermanent
                         ? '🔒 This ban is <strong>permanent</strong> and cannot be appealed through normal channels.'
-                        : `⏳ This ban is <strong>temporary</strong> — it will be lifted after ${banDurationText.replace(' (Sementara)', '')}.`}
+                        : `⏳ This ban is <strong>temporary</strong> — it will be lifted after ${banDurationText.replace(' (Temporary)', '')}.`}
                 </div>
             </div>
         `;
@@ -808,6 +806,8 @@ function displayResult(data, uid) {
         // LOCAL BANNED CARD (feature Ban User)
         // =====================
         const daysLeft = getBanDaysLeft(localBan);
+        // Permanent = rekod tanpa tarikh luput (expiresAt 0)
+        const isPermBan = !!localBan.permanent || !localBan.expiresAt;
         html = `
             <div class="ban-result-card banned-card local-ban-card">
                 <div class="ban-status-header banned-header">
@@ -818,8 +818,10 @@ function displayResult(data, uid) {
                         </svg>
                     </div>
                     <div class="ban-status-text">
-                        <h2>⛔ Banned — ${localBan.days} Day${localBan.days > 1 ? 's' : ''}</h2>
-                        <p class="ban-subtitle">Ban record on this website · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left</p>
+                        <h2>${isPermBan ? '⛔ Banned — Permanent' : `⛔ Banned — ${localBan.days} Day${localBan.days > 1 ? 's' : ''}`}</h2>
+                        <p class="ban-subtitle">${isPermBan
+                            ? 'Permanent ban record on this website'
+                            : `Ban record on this website · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}</p>
                     </div>
                 </div>
 
@@ -853,10 +855,10 @@ function displayResult(data, uid) {
                         </div>
                     </div>
                     <div class="ban-detail-row">
-                        <div class="ban-detail-icon">⏳</div>
+                        <div class="ban-detail-icon">${isPermBan ? '🔒' : '⏳'}</div>
                         <div class="ban-detail-content">
                             <span class="ban-detail-label">Expires At</span>
-                            <span class="ban-detail-value">${formatDateNice(new Date(localBan.expiresAt))}</span>
+                            <span class="ban-detail-value">${isPermBan ? 'Never' : formatDateNice(new Date(localBan.expiresAt))}</span>
                         </div>
                     </div>
                     <div class="ban-detail-row">
@@ -868,8 +870,10 @@ function displayResult(data, uid) {
                     </div>
                 </div>
 
-                <div class="ban-footer permanent-footer">
-                    🚫 Account ini <strong>direkodkan banned</strong> selama ${localBan.days} hari.
+                <div class="ban-footer ${isPermBan ? 'permanent-footer' : 'trial-footer'}">
+                    ${isPermBan
+                        ? '🔒 This ban is <strong>permanent</strong> — it will only be lifted manually by an admin.'
+                        : `🚫 This account is <strong>recorded as banned</strong> for ${localBan.days} day${localBan.days > 1 ? 's' : ''}.`}
                 </div>
                 <div class="ban-actions">
                     <button type="button" class="btn-unban" onclick="unbanAccount('${escapedUid}')">🔓 Unban Account</button>
@@ -940,7 +944,7 @@ function displayResult(data, uid) {
                     <button type="button" class="btn-ban" onclick="openBanModal('${escapedUid}')">
                         ⛔ Ban Account
                     </button>
-                    <span class="ban-hint">Pilih tempoh ban: <strong>7 hari</strong> atau <strong>30 hari</strong></span>
+                    <span class="ban-hint">Select duration: <strong>7 days</strong>, <strong>30 days</strong> or <strong>Permanent</strong></span>
                 </div>
             </div>
         `;
@@ -964,7 +968,8 @@ function getBanRecord(uid) {
     const rec = bannedAccounts[key];
     if (!rec) return null;
 
-    // Buang automatik bila tempoh dah habis
+    // Buang automatik bila tempoh dah habis.
+    // Rekod Permanent disimpan dengan expiresAt = 0 (falsy) → tak diluputkan.
     if (rec.expiresAt && rec.expiresAt <= Date.now()) {
         delete bannedAccounts[key];
         saveBannedAccounts();
@@ -974,7 +979,7 @@ function getBanRecord(uid) {
 }
 
 function getBanDaysLeft(rec) {
-    if (!rec || !rec.expiresAt) return 0;
+    if (!rec || !rec.expiresAt) return 0; // Permanent → tiada hari baki
     return Math.max(0, Math.ceil((rec.expiresAt - Date.now()) / 86400000));
 }
 
@@ -1019,7 +1024,12 @@ function confirmBan() {
     const now = Date.now();
     const reasonEl = document.getElementById('banReasonInput');
     const reason = ((reasonEl && reasonEl.value) || '').trim() || 'Violation of the rules';
-    const expiresAt = now + (selectedBanDays * 86400000);
+
+    // 0 hari = Permanent — expiresAt disimpan sebagai 0 supaya tak pernah
+    // diluputkan automatik oleh getBanRecord().
+    const permanent = selectedBanDays === 0;
+    const expiresAt = permanent ? 0 : now + (selectedBanDays * 86400000);
+    const durationText = permanent ? 'Permanent' : `${selectedBanDays} days`;
 
     const alreadyBanned = !!bannedAccounts[uid];
 
@@ -1027,7 +1037,8 @@ function confirmBan() {
         uid,
         nickname: pendingBan.nickname || 'Unknown',
         region: pendingBan.region || '',
-        days: selectedBanDays,
+        days: permanent ? 0 : selectedBanDays,
+        permanent,
         reason,
         bannedAt: now,
         expiresAt
@@ -1047,15 +1058,20 @@ function confirmBan() {
         `UID: \`${uid}\`\n` +
         `Nickname: *${banEntry.nickname}*\n` +
         `Region: ${banEntry.region || 'Unknown'}\n` +
-        `Duration: *${selectedBanDays} days*\n` +
+        `Duration: *${durationText}*\n` +
         `Banned at: *${new Date(now).toLocaleString()}*\n` +
-        `Expires: *${new Date(expiresAt).toLocaleString()}*\n` +
+        `Expires: *${permanent ? 'Never' : new Date(expiresAt).toLocaleString()}*\n` +
         `Reason: ${reason}`
     );
 
     closeBanModal();
     refreshResultCard();
-    showToast(`⛔ UID ${uid} banned for ${selectedBanDays} days`, 'danger');
+    showToast(
+        permanent
+            ? `⛔ UID ${uid} permanently banned`
+            : `⛔ UID ${uid} banned for ${selectedBanDays} days`,
+        'danger'
+    );
 }
 
 function unbanAccount(uid) {
@@ -1494,7 +1510,9 @@ function createHistoryItemHTML(entry) {
     if (localBan) {
         statusClass = 'banned';
         statusIcon = '⛔';
-        statusBadge = `<span class="badge badge-localban">⛔ ${localBan.days}d Ban</span>`;
+        statusBadge = localBan.permanent || !localBan.expiresAt
+            ? '<span class="badge badge-localban">⛔ Permanent Ban</span>'
+            : `<span class="badge badge-localban">⛔ ${localBan.days}d Ban</span>`;
     }
 
     const regionDisplay = getRegionDisplay(entry.region);
