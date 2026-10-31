@@ -1483,7 +1483,7 @@ body {
 
 .ban-duration-options {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
 }
 
@@ -1526,6 +1526,24 @@ body {
     border-color: rgba(239, 68, 68, 0.6);
     color: #fca5a5;
     box-shadow: 0 0 18px rgba(239, 68, 68, 0.22);
+}
+
+/* Opsyen Permanent — merah lebih pekat supaya jelas beza dengan 7 / 30 hari */
+.ban-duration-btn.ban-duration-permanent {
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.32);
+}
+
+.ban-duration-btn.ban-duration-permanent:hover {
+    border-color: rgba(239, 68, 68, 0.7);
+    color: #fecaca;
+}
+
+.ban-duration-btn.ban-duration-permanent.active {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.4), rgba(127, 29, 29, 0.3));
+    border-color: #ef4444;
+    color: #fee2e2;
+    box-shadow: 0 0 22px rgba(239, 68, 68, 0.42);
 }
 
 .ban-reason-input {
