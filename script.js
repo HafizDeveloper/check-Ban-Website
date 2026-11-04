@@ -716,6 +716,16 @@ function displayResult(data, uid) {
     // Rekod ban buatan sendiri (feature Ban User)
     const localBan = getBanRecord(uid);
 
+    // Rekod lama mungkin disimpan semasa nickname masih "Unknown" — sekarang
+    // backend dah boleh bagi nama sebenar, jadi kemas kini rekod + sejarah
+    // supaya kad tak terpapar "Unknown" selamanya.
+    if (localBan && nickname && nickname !== 'Unknown' && localBan.nickname !== nickname) {
+        localBan.nickname = nickname;
+        if (!localBan.region && data.region) localBan.region = String(data.region).toUpperCase();
+        saveBannedAccounts();
+        patchHistoryNickname(uid, { nickname, region: data.region || '' });
+    }
+
     // Determine ban type
     let isPermanent = false;
     let banDurationText = '';
